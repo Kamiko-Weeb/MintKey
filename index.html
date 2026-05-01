@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mintkey</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Helvetica Neue', sans-serif;
+      background: #fdf6f8;
+      color: #3d1a26;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 40px 20px;
+    }
+    img.icon {
+      width: 120px;
+      height: 120px;
+      border-radius: 28px;
+      margin-bottom: 24px;
+      box-shadow: 0 8px 30px rgba(196,103,122,0.2);
+    }
+    h1 {
+      font-size: 42px;
+      font-weight: 800;
+      letter-spacing: 3px;
+      color: #c4677a;
+      margin-bottom: 12px;
+    }
+    p.tagline {
+      font-size: 16px;
+      color: #a07080;
+      margin-bottom: 40px;
+      max-width: 420px;
+      line-height: 1.6;
+    }
+    .download-buttons {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+    }
+    a.download-btn {
+      display: inline-block;
+      text-decoration: none;
+      padding: 16px 40px;
+      border-radius: 50px;
+      font-size: 16px;
+      font-weight: bold;
+      letter-spacing: 1px;
+      transition: background 0.2s;
+      min-width: 240px;
+    }
+    a.mac {
+      background-color: #c4677a;
+      color: white;
+      box-shadow: 0 4px 20px rgba(196,103,122,0.3);
+    }
+    a.mac:hover { background-color: #a04f62; }
+    a.windows {
+      background-color: #a07080;
+      color: white;
+      box-shadow: 0 4px 20px rgba(160,112,128,0.3);
+    }
+    a.windows:hover { background-color: #7a5060; }
+    p.version {
+      margin-top: 16px;
+      font-size: 12px;
+      color: #b07a90;
+    }
+    .features {
+      margin-top: 60px;
+      display: flex;
+      gap: 24px;
+      flex-wrap: wrap;
+      justify-content: center;
+      max-width: 700px;
+    }
+    .feature {
+      background: white;
+      border: 1.5px solid #e8c4cc;
+      border-radius: 16px;
+      padding: 20px 24px;
+      width: 200px;
+      text-align: left;
+    }
+    .feature h3 {
+      font-size: 14px;
+      font-weight: bold;
+      color: #c4677a;
+      margin-bottom: 6px;
+    }
+    .feature p {
+      font-size: 12px;
+      color: #a07080;
+      line-height: 1.5;
+    }
+    footer {
+      margin-top: 60px;
+      font-size: 11px;
+      color: #c4a0b0;
+    }
+  </style>
+</head>
+<body>
+  <img class="icon" src="icon.png" alt="Mintkey icon">
+  <h1>MINTKEY</h1>
+  <p class="tagline">A minimal Mac app that types for you — with AI built right in.</p>
+  <div class="download-buttons">
+    <a class="download-btn mac" href="https://github.com/Kamiko-Weeb/MintKey/raw/main/Mintkey.dmg">⬇ Download for Mac</a>
+    <a class="download-btn windows" href="https://github.com/Kamiko-Weeb/MintKey/releases/latest/download/Mintkey-Windows.zip">⬇ Download for Windows</a>
+  </div>
+  <p class="version">Free · macOS & Windows</p>
+  <div class="features">
+    <div class="feature">
+      <h3>Auto Typer</h3>
+      <p>Paste any text and Mintkey types it for you at human-like speed.</p>
+    </div>
+    <div class="feature">
+      <h3>AI Chat</h3>
+      <p>Chat with AI and type the response directly into any window.</p>
+    </div>
+    <div class="feature">
+      <h3>Minimal & Cute</h3>
+      <p>Clean pink UI that stays out of your way.</p>
+    </div>
+  </div>
+  <footer>Made with love · Mintkey</footer>
+</body>
+</html>

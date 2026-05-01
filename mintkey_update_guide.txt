@@ -1,0 +1,81 @@
+============================================================
+MINTKEY - HOW TO PUSH AN UPDATE
+============================================================
+
+Every time you make a change to the app and want to push it live, follow these steps.
+
+------------------------------------------------------------
+STEP 1 - Replace the script
+------------------------------------------------------------
+Download the new AutoTyper.py from Claude and drag it into:
+~/Desktop/mintkey-repo/
+Say yes to replace the existing one.
+
+------------------------------------------------------------
+STEP 2 - Rebuild the .dmg (Mac installer)
+------------------------------------------------------------
+Run these commands in terminal one by one:
+
+  cd ~/Desktop
+  pyinstaller --onefile --windowed --icon=mintkey.icns --name=Mintkey AutoTyper.py
+
+Then rebuild the dmg:
+
+  cp -r ~/Desktop/dist/Mintkey.app ~/Desktop/Mintkey_DMG/Mintkey.app
+  dmgbuild -s ~/Desktop/mintkey_dmg.py "Mintkey" ~/Desktop/Mintkey.dmg
+
+Then copy the new .dmg into the repo:
+
+  cp ~/Desktop/Mintkey.dmg ~/Desktop/mintkey-repo/Mintkey.dmg
+
+------------------------------------------------------------
+STEP 3 - Push everything to GitHub
+------------------------------------------------------------
+Run these commands:
+
+  cd ~/Desktop/mintkey-repo
+  git add .
+  git commit -m "describe what you changed here"
+  git push
+
+Replace the commit message with something like:
+  "Fix send button clipping"
+  "Add new AI model"
+  "Update UI colors"
+
+------------------------------------------------------------
+STEP 4 - GitHub builds the Windows version automatically
+------------------------------------------------------------
+Once you push, GitHub Actions automatically builds the
+Windows .exe in the background. You can watch it at:
+
+  github.com/Kamiko-Weeb/MintKey/actions
+
+Green checkmark = build succeeded.
+Red X = something broke, click it to see the error.
+
+------------------------------------------------------------
+STEP 5 - Check the website
+------------------------------------------------------------
+Give it a minute then check:
+
+  kamiko-weeb.github.io/MintKey
+
+The Mac download button links directly to Mintkey.dmg in
+your repo so it updates automatically when you push.
+
+============================================================
+QUICK REFERENCE - just the commands
+============================================================
+
+cd ~/Desktop
+pyinstaller --onefile --windowed --icon=mintkey.icns --name=Mintkey AutoTyper.py
+cp -r ~/Desktop/dist/Mintkey.app ~/Desktop/Mintkey_DMG/Mintkey.app
+dmgbuild -s ~/Desktop/mintkey_dmg.py "Mintkey" ~/Desktop/Mintkey.dmg
+cp ~/Desktop/Mintkey.dmg ~/Desktop/mintkey-repo/Mintkey.dmg
+cd ~/Desktop/mintkey-repo
+git add .
+git commit -m "your update message here"
+git push
+
+============================================================
