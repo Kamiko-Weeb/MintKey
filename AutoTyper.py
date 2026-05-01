@@ -931,8 +931,10 @@ class MainWindow(QMainWindow):
         self._start_update_check()
 
     def _start_update_check(self):
-        # Start the background update check - runs silently, user never sees it
-        # unless there's actually a newer version available
+        # Wait 2 seconds after launch before checking so the window is fully visible
+        QTimer.singleShot(2000, self._run_update_check)
+
+    def _run_update_check(self):
         self.update_checker = UpdateChecker()
         self.update_checker.update_available.connect(self._on_update_available)
         self.update_checker.start()
