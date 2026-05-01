@@ -43,6 +43,7 @@ from PyQt6.QtGui import QFont, QColor, QPalette, QTextCursor
 
 # --- Constants ---
 import platform
+import webbrowser
 CHARS_PER_WORD = 5
 DEFAULT_WPM = 1000.0
 TARGET_TIME_SECONDS = 10.0
@@ -51,6 +52,11 @@ NIM_MODEL = "mistralai/mistral-medium-3.5-128b"
 IS_MAC = platform.system() == "Darwin"
 IS_WINDOWS = platform.system() == "Windows"
 
+# Version system - bump this number every release
+CURRENT_VERSION = 29
+VERSION_CHECK_URL = "https://raw.githubusercontent.com/Kamiko-Weeb/MintKey/main/version.txt"
+DOWNLOAD_URL = "https://kamiko-weeb.github.io/MintKey"
+
 NIM_MODELS = [
     ("Mistral Medium 3.5", "mistralai/mistral-medium-3.5-128b", "Best all-rounder. Fast, smart, great for chat and writing."),
     ("Mistral Small 4", "mistralai/mistral-small-4-119b-2603", "Lighter and faster than Medium. Good for quick back-and-forth."),
@@ -58,6 +64,25 @@ NIM_MODELS = [
     ("MiniMax M2.7", "minimaxai/minimax-m2.7", "Huge 230B model. Most capable but can be slower."),
     ("Nemotron Super 120B", "nvidia/nemotron-3-super-120b-a12b", "NVIDIA's own model. Good for coding and planning tasks."),
 ]
+
+
+# --- Update Checker ---
+# This runs in a background thread on launch so it never slows down the UI.
+# It fetches version.txt from GitHub, compares to CURRENT_VERSION,
+# and emits update_available if a newer version exists.
+class UpdateChecker(QThread):
+    update_available = pyqtSignal(int)  # emits the new version number
+
+    def run(self):
+        try:
+            response = requests.get(VERSION_CHECK_URL, timeout=5)
+            response.raise_for_status()
+            latest = int(response.text.strip())
+            if latest > CURRENT_VERSION:
+                self.update_available.emit(latest)
+        except Exception:
+            # Silently ignore all errors - no internet, bad response, etc.
+            pass
 
 # --- Styling ---
 DARK_BG = "#fdf6f8"
@@ -903,6 +928,28 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Mintkey")
         self.setMinimumSize(680, 620)
         self._build_ui()
+        self._start_update_check()
+
+    def _start_update_check(self):
+        # Start the background update check - runs silently, user never sees it
+        # unless there's actually a newer version available
+        self.update_checker = UpdateChecker()
+        self.update_checker.update_available.connect(self._on_update_available)
+        self.update_checker.start()
+
+    @pyqtSlot(int)
+    def _on_update_available(self, new_version: int):
+        # This fires on the main thread thanks to pyqtSignal
+        # Show a clean popup asking if they want to update
+        reply = QMessageBox.question(
+            self,
+            "Update Available",
+            f"Mintkey v{new_version} is available.\nYou're on v{CURRENT_VERSION}.\n\nOpen the download page?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            webbrowser.open(DOWNLOAD_URL)
+            QApplication.quit()
 
     def _build_ui(self):
         central = QWidget()
