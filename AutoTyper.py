@@ -343,6 +343,12 @@ class AutoTyperPanel(QWidget):
         self.debug_window = debug_window
         self._build_ui()
 
+    def apply_defaults(self, wpm: float, delay: int, mistake_rate: float) -> None:
+        """Called by SettingsWindow when the user changes default values."""
+        self.wpm_input.setValue(wpm)
+        self.delay_input.setValue(delay)
+        self.mistake_input.setValue(mistake_rate)
+
     def _log(self, msg: str):
         if self.debug_window and self.debug_window.isVisible():
             self.debug_window.log(f"[AutoTyper] {msg}")
@@ -534,6 +540,12 @@ class AIChatPanel(QWidget):
         self.debug_window = debug_window
         self._build_ui()
 
+    def apply_defaults(self, wpm: float, delay: int, mistake_rate: float) -> None:
+        """Called by SettingsWindow when the user changes default values."""
+        self.wpm_input.setValue(wpm)
+        self.delay_input.setValue(delay)
+        self.mistake_input.setValue(mistake_rate)
+
     def _log(self, msg: str):
         if self.debug_window and self.debug_window.isVisible():
             self.debug_window.log(f"[AI] {msg}")
@@ -660,12 +672,6 @@ class AIChatPanel(QWidget):
     def send_message(self):
         msg = self.chat_input.text().strip()
         if not msg:
-            return
-
-        # Handle /terminal command
-        if msg.lower() == "/terminal":
-            self.chat_input.clear()
-            self._open_debug()
             return
 
         if not self.api_key:
@@ -858,7 +864,8 @@ class HelpPanel(QWidget):
         )
 
         section("Commands",
-            "/terminal — type this in the AI Chat input and press Send (or Enter) to open the debug terminal. "
+            "Debug Terminal — click the gear icon (⚙) in the top right corner, then click "
+            "'Open Debug Terminal' in the Settings window. "
             "The debug terminal shows a live log of everything happening behind the scenes - "
             "API calls, typing events, countdowns, errors, and more. "
             "It's colour coded: [AI] for chat events, [AutoTyper] for typing events, [System] for app events."
@@ -879,6 +886,167 @@ class HelpPanel(QWidget):
         layout.addStretch()
         scroll.setWidget(container)
         outer.addWidget(scroll)
+
+
+# --- Settings Window ---
+# Separate window opened via the gear icon in the header.
+# Keeps settings UI out of the main window to avoid clutter.
+# The debug terminal is accessible from here so it works from any tab.
+class SettingsWindow(QWidget):
+    # Signal emitted whenever any default value changes
+    defaults_changed = pyqtSignal(float, int, float)  # wpm, delay, mistake_rate
+
+    def __init__(self, debug_window=None, typer_panel=None, ai_panel=None):
+        super().__init__()
+        self.debug_window = debug_window
+        self.typer_panel = typer_panel
+        self.ai_panel = ai_panel
+        self.setWindowTitle("Mintkey Settings")
+        self.setMinimumWidth(420)
+        self.setStyleSheet(f"""
+            QWidget {{
+                background-color: {DARK_BG};
+                color: {TEXT_PRIMARY};
+                font-family: 'Helvetica Neue', sans-serif;
+            }}
+            QLabel#section {{
+                color: {ACCENT};
+                font-size: 13px;
+                font-weight: bold;
+                margin-top: 8px;
+            }}
+            QLabel {{
+                color: {TEXT_DIM};
+                font-size: 12px;
+            }}
+            QDoubleSpinBox, QSpinBox {{
+                background-color: white;
+                color: {TEXT_PRIMARY};
+                border: 1.5px solid {BORDER};
+                border-radius: 10px;
+                padding: 4px 8px;
+                font-size: 13px;
+            }}
+            QDoubleSpinBox::up-button, QSpinBox::up-button,
+            QDoubleSpinBox::down-button, QSpinBox::down-button {{
+                width: 0px; height: 0px; border: none;
+            }}
+            QPushButton {{
+                background-color: {PANEL_BG};
+                color: {ACCENT};
+                border: 1.5px solid {ACCENT};
+                border-radius: 20px;
+                padding: 8px 22px;
+                font-size: 13px;
+                font-weight: bold;
+            }}
+            QPushButton:hover {{
+                background-color: {ACCENT};
+                color: white;
+            }}
+        """)
+        self._build_ui()
+
+    def _build_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setSpacing(16)
+        layout.setContentsMargins(24, 24, 24, 24)
+
+        # --- General section ---
+        general_label = QLabel("General")
+        general_label.setObjectName("section")
+        layout.addWidget(general_label)
+
+        # Default WPM
+        wpm_row = QHBoxLayout()
+        wpm_row.addWidget(QLabel("Default Speed (WPM)"))
+        wpm_row.addStretch()
+        self.default_wpm = QDoubleSpinBox()
+        self.default_wpm.setRange(10, 50000)
+        self.default_wpm.setValue(1000)
+        self.default_wpm.setDecimals(0)
+        self.default_wpm.setFixedWidth(100)
+        wpm_row.addWidget(self.default_wpm)
+        layout.addLayout(wpm_row)
+
+        # Default delay
+        delay_row = QHBoxLayout()
+        delay_row.addWidget(QLabel("Default Start Delay (seconds)"))
+        delay_row.addStretch()
+        self.default_delay = QSpinBox()
+        self.default_delay.setRange(0, 60)
+        self.default_delay.setValue(10)
+        self.default_delay.setFixedWidth(100)
+        delay_row.addWidget(self.default_delay)
+        layout.addLayout(delay_row)
+
+        # Default mistake rate
+        mistake_row = QHBoxLayout()
+        mistake_row.addWidget(QLabel("Default Mistake Rate (0-1)"))
+        mistake_row.addStretch()
+        self.default_mistake = QDoubleSpinBox()
+        self.default_mistake.setRange(0.0, 1.0)
+        self.default_mistake.setValue(0.0)
+        self.default_mistake.setSingleStep(0.05)
+        self.default_mistake.setDecimals(2)
+        self.default_mistake.setFixedWidth(100)
+        mistake_row.addWidget(self.default_mistake)
+        layout.addLayout(mistake_row)
+
+        # Divider
+        sep = QFrame()
+        sep.setObjectName("separator")
+        sep.setStyleSheet(f"background-color: {BORDER}; max-height: 1px;")
+        layout.addWidget(sep)
+
+        # --- Debug section ---
+        debug_label = QLabel("Debug")
+        debug_label.setObjectName("section")
+        layout.addWidget(debug_label)
+
+        debug_desc = QLabel(
+            "Open the debug terminal to see a live log of everything "
+            "happening behind the scenes - API calls, typing events, "
+            "errors, and more."
+        )
+        debug_desc.setWordWrap(True)
+        layout.addWidget(debug_desc)
+
+        debug_btn = QPushButton("Open Debug Terminal")
+        debug_btn.clicked.connect(self._open_debug)
+        layout.addWidget(debug_btn, alignment=Qt.AlignmentFlag.AlignLeft)
+
+        # Version info
+        sep2 = QFrame()
+        sep2.setStyleSheet(f"background-color: {BORDER}; max-height: 1px;")
+        layout.addWidget(sep2)
+
+        version_label = QLabel(f"Mintkey  ·  Version {CURRENT_VERSION}")
+        version_label.setStyleSheet(f"color: {TEXT_DIM}; font-size: 11px;")
+        layout.addWidget(version_label)
+
+        layout.addStretch()
+
+        # Wire spinboxes to push defaults to panels whenever they change
+        self.default_wpm.valueChanged.connect(self._push_defaults)
+        self.default_delay.valueChanged.connect(self._push_defaults)
+        self.default_mistake.valueChanged.connect(self._push_defaults)
+
+    def _push_defaults(self):
+        """Push current default values to both panels."""
+        wpm = self.default_wpm.value()
+        delay = self.default_delay.value()
+        mistake = self.default_mistake.value()
+        if self.typer_panel:
+            self.typer_panel.apply_defaults(wpm, delay, mistake)
+        if self.ai_panel:
+            self.ai_panel.apply_defaults(wpm, delay, mistake)
+
+    def _open_debug(self):
+        if self.debug_window:
+            self.debug_window.show()
+            self.debug_window.raise_()
+            self.debug_window.log("[System] Debug terminal opened from Settings.")
 
 
 # --- Main Window ---
@@ -957,6 +1125,29 @@ class MainWindow(QMainWindow):
         tab_row.addWidget(self.ai_tab)
         tab_row.addWidget(self.help_tab)
         tab_row.addStretch()
+
+        # Gear button - opens Settings window
+        self.settings_btn = QPushButton("⚙")
+        self.settings_btn.setFixedWidth(36)
+        self.settings_btn.setFixedHeight(36)
+        self.settings_btn.setToolTip("Settings")
+        self.settings_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {PANEL_BG};
+                color: {ACCENT};
+                border: 1.5px solid {ACCENT};
+                border-radius: 18px;
+                font-size: 16px;
+                padding: 0px;
+            }}
+            QPushButton:hover {{
+                background-color: {ACCENT};
+                color: white;
+            }}
+        """)
+        self.settings_btn.clicked.connect(self._open_settings)
+        tab_row.addWidget(self.settings_btn)
+
         header_layout.addLayout(tab_row)
         main_layout.addWidget(header)
 
@@ -992,6 +1183,18 @@ class MainWindow(QMainWindow):
         self.typer_tab.setChecked(index == 0)
         self.ai_tab.setChecked(index == 1)
         self.help_tab.setChecked(index == 2)
+        self.settings_btn.setChecked(False)
+
+    def _open_settings(self):
+        if not hasattr(self, '_settings_window') or self._settings_window is None:
+            self._settings_window = SettingsWindow(
+                debug_window=self.debug_window,
+                typer_panel=self.typer_panel,
+                ai_panel=self.ai_panel,
+            )
+        self._settings_window.show()
+        self._settings_window.raise_()
+        self._settings_window.activateWindow()
 
     def terminate(self):
         QApplication.quit()
