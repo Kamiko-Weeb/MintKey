@@ -57,13 +57,18 @@ CURRENT_VERSION = 29
 VERSION_CHECK_URL = "https://raw.githubusercontent.com/Kamiko-Weeb/MintKey/main/version.txt"
 DOWNLOAD_URL = "https://kamiko-weeb.github.io/MintKey"
 
-NIM_MODELS = [
-    ("Mistral Medium 3.5", "mistralai/mistral-medium-3.5-128b", "Best all-rounder. Fast, smart, great for chat and writing."),
-    ("Mistral Small 4", "mistralai/mistral-small-4-119b-2603", "Lighter and faster than Medium. Good for quick back-and-forth."),
-    ("GLM 4.7", "z-ai/glm-4.7", "Strong at reasoning and tool use. Good for technical questions."),
-    ("MiniMax M2.7", "minimaxai/minimax-m2.7", "Huge 230B model. Most capable but can be slower."),
-    ("Nemotron Super 120B", "nvidia/nemotron-3-super-120b-a12b", "NVIDIA's own model. Good for coding and planning tasks."),
-]
+# Ensure the Desktop directory is in the module search path so that
+# the services package can always be found regardless of how the script
+# is launched (terminal, PyInstaller, double-click, etc.)
+import sys as _sys_path_fix
+import pathlib as _pathlib
+_desktop = str(_pathlib.Path.home() / "Desktop")
+if _desktop not in _sys_path_fix.path:
+    _sys_path_fix.path.insert(0, _desktop)
+
+# AI logic lives in services/ai_service.py.
+# Importing NIM_MODELS and AIWorker from there keeps this file focused on UI.
+from services.ai_service import NIM_MODELS, NIM_MODEL, AIWorker  # noqa: E402
 
 
 # --- Update Checker ---
@@ -320,51 +325,6 @@ class TypingWorker(QThread):
         if not self.stop_event.is_set():
             self.status_update.emit("Done!")
         self.finished.emit()
-
-
-# --- Worker thread for AI ---
-class AIWorker(QThread):
-    response_ready = pyqtSignal(str)
-    error = pyqtSignal(str)
-
-    def __init__(self, messages, api_key, model=NIM_MODEL):
-        super().__init__()
-        self.messages = messages
-        self.api_key = api_key
-        self.model = model
-        self._cancelled = False
-
-    def cancel(self):
-        self._cancelled = True
-        self.terminate()
-
-    def run(self):
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-        }
-        payload = {
-            "model": self.model,
-            "messages": self.messages,
-            "max_tokens": 1024,
-            "temperature": 0.7,
-        }
-        try:
-            response = requests.post(NIM_API_URL, headers=headers, json=payload, timeout=60)
-            response.raise_for_status()
-            data = response.json()
-            message = data["choices"][0]["message"]
-            reply = message.get("content", "").strip()
-            # Some NIM models return reasoning separately and leave content blank
-            if not reply:
-                reply = message.get("reasoning", "").strip()
-            if not reply:
-                reply = "(No response received. Try rephrasing your message.)"
-            if not self._cancelled:
-                self.response_ready.emit(reply)
-        except Exception as e:
-            if not self._cancelled:
-                self.error.emit(str(e))
 
 
 # --- Focus monitor (detects window switch) ---
