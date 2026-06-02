@@ -21,7 +21,7 @@ jobs:
 
       - name: Build Mac app
         run: |
-          pyinstaller --onefile --windowed --icon=mintkey.icns --name=Mintkey \
+          pyinstaller --windowed --icon=mintkey.icns --name=Mintkey \
             --add-data "version.txt:." \
             AutoTyper.py
 

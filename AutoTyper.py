@@ -53,7 +53,12 @@ IS_WINDOWS = platform.system() == "Windows"
 # code needs to change.
 def _read_local_version() -> int:
     try:
-        _here = pathlib.Path(__file__).parent if '__file__' in dir() else pathlib.Path.home() / "Desktop"
+        import sys as _sys
+        # PyInstaller extracts bundled data files to sys._MEIPASS at runtime
+        if getattr(_sys, 'frozen', False):
+            _here = pathlib.Path(_sys._MEIPASS)
+        else:
+            _here = pathlib.Path(__file__).parent if '__file__' in dir() else pathlib.Path.home() / "Desktop"
         return int((_here / "version.txt").read_text().strip())
     except Exception:
         return 0
