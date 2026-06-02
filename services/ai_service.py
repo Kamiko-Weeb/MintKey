@@ -23,6 +23,11 @@ import requests
 
 from PyQt6.QtCore import QThread, pyqtSignal
 
+from config import APIConfig
+from utils.logger import get_logger
+
+log = get_logger(__name__)
+
 
 # --- Model registry ---
 # Add or remove models here without touching the UI code.
@@ -55,11 +60,8 @@ NIM_MODELS: list[tuple[str, str, str]] = [
     ),
 ]
 
-# Default model - used when no model is explicitly selected.
+# Default model - the first entry in the registry above.
 NIM_MODEL: str = NIM_MODELS[0][1]
-
-# NVIDIA NIM API endpoint.
-NIM_API_URL: str = "https://integrate.api.nvidia.com/v1/chat/completions"
 
 
 def build_payload(messages: list[dict], model: str) -> dict:
@@ -71,8 +73,8 @@ def build_payload(messages: list[dict], model: str) -> dict:
     return {
         "model": model,
         "messages": messages,
-        "max_tokens": 1024,
-        "temperature": 0.7,
+        "max_tokens": APIConfig.MAX_TOKENS,
+        "temperature": APIConfig.TEMPERATURE,
     }
 
 
@@ -135,14 +137,17 @@ class AIWorker(QThread):
             "Content-Type": "application/json",
         }
         payload = build_payload(self.messages, self.model)
+        log.info("Sending request to NIM API (model=%s, messages=%d)", self.model, len(self.messages))
         try:
             response = requests.post(
-                NIM_API_URL, headers=headers, json=payload, timeout=60
+                APIConfig.URL, headers=headers, json=payload, timeout=APIConfig.TIMEOUT
             )
             response.raise_for_status()
             reply = parse_response(response.json())
+            log.info("NIM API responded (%d chars)", len(reply))
             if not self._cancelled:
                 self.response_ready.emit(reply)
         except Exception as e:
+            log.error("NIM API error: %s", e)
             if not self._cancelled:
                 self.error.emit(str(e))

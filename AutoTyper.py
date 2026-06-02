@@ -7,7 +7,7 @@ import sys
 import os
 import time
 import random
-import threading
+import pathlib
 import requests
 
 try:
@@ -44,31 +44,40 @@ from PyQt6.QtGui import QFont, QColor, QPalette, QTextCursor
 # --- Constants ---
 import platform
 import webbrowser
-CHARS_PER_WORD = 5
-DEFAULT_WPM = 1000.0
-TARGET_TIME_SECONDS = 10.0
-NIM_API_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
-NIM_MODEL = "mistralai/mistral-medium-3.5-128b"
+from config import APIConfig, AppConfig, TypingConfig, UIConfig
 IS_MAC = platform.system() == "Darwin"
 IS_WINDOWS = platform.system() == "Windows"
 
-# Version system - bump this number every release
-CURRENT_VERSION = 29
-VERSION_CHECK_URL = "https://raw.githubusercontent.com/Kamiko-Weeb/MintKey/main/version.txt"
-DOWNLOAD_URL = "https://kamiko-weeb.github.io/MintKey"
+# Version is read from version.txt sitting next to AutoTyper.py.
+# To release a new version just update that one file - nothing in the
+# code needs to change.
+def _read_local_version() -> int:
+    try:
+        _here = pathlib.Path(__file__).parent if '__file__' in dir() else pathlib.Path.home() / "Desktop"
+        return int((_here / "version.txt").read_text().strip())
+    except Exception:
+        return 0
+
+CURRENT_VERSION = _read_local_version()
 
 # Ensure the Desktop directory is in the module search path so that
-# the services package can always be found regardless of how the script
-# is launched (terminal, PyInstaller, double-click, etc.)
+# both the services and utils packages can always be found regardless
+# of how the script is launched (terminal, PyInstaller, double-click, etc.)
 import sys as _sys_path_fix
 import pathlib as _pathlib
 _desktop = str(_pathlib.Path.home() / "Desktop")
 if _desktop not in _sys_path_fix.path:
     _sys_path_fix.path.insert(0, _desktop)
 
+# Logger must be imported early, before other services
+from utils.logger import get_logger  # noqa: E402
+log = get_logger(__name__)
+
 # AI logic lives in services/ai_service.py.
-# Importing NIM_MODELS and AIWorker from there keeps this file focused on UI.
 from services.ai_service import NIM_MODELS, NIM_MODEL, AIWorker  # noqa: E402
+
+# Typing engine lives in services/typing_engine.py.
+from services.typing_engine import TypingEngine  # noqa: E402
 
 
 # --- Update Checker ---
@@ -80,266 +89,103 @@ class UpdateChecker(QThread):
 
     def run(self):
         try:
-            response = requests.get(VERSION_CHECK_URL, timeout=5)
+            response = requests.get(
+                AppConfig.VERSION_CHECK_URL, timeout=AppConfig.VERSION_CHECK_TIMEOUT
+            )
             response.raise_for_status()
             latest = int(response.text.strip())
+            log.debug("Version check: local=%d, remote=%d", CURRENT_VERSION, latest)
             if latest > CURRENT_VERSION:
+                log.info("Update available: v%d -> v%d", CURRENT_VERSION, latest)
                 self.update_available.emit(latest)
-        except Exception:
+        except Exception as e:
             # Silently ignore all errors - no internet, bad response, etc.
-            pass
-
-# --- Styling ---
-DARK_BG = "#fdf6f8"
-PANEL_BG = "#f5e6eb"
-ACCENT = "#c4677a"
-ACCENT_DIM = "#a04f62"
-TEXT_PRIMARY = "#3d1a26"
-TEXT_DIM = "#a07080"
-DANGER = "#b03030"
-BORDER = "#e8c4cc"
-
-STYLE = f"""
-QMainWindow, QWidget {{
-    background-color: {DARK_BG};
-    color: {TEXT_PRIMARY};
-    font-family: 'Helvetica Neue', 'Arial Rounded MT Bold', sans-serif;
-}}
-QPushButton {{
-    background-color: {PANEL_BG};
-    color: {ACCENT};
-    border: 1.5px solid {ACCENT};
-    border-radius: 20px;
-    padding: 8px 22px;
-    font-size: 13px;
-    font-weight: bold;
-}}
-QPushButton:hover {{
-    background-color: {ACCENT};
-    color: white;
-}}
-QPushButton:disabled {{
-    color: {TEXT_DIM};
-    border-color: {BORDER};
-    background-color: {PANEL_BG};
-    border-radius: 20px;
-}}
-QPushButton#danger {{
-    color: {ACCENT};
-    border-color: {ACCENT};
-    border-radius: 20px;
-}}
-QPushButton#danger:hover {{
-    background-color: {ACCENT};
-    color: white;
-}}
-QPushButton#toggle {{
-    border-radius: 0px;
-    border: none;
-    border-bottom: 2px solid transparent;
-    padding: 10px 28px;
-    font-size: 14px;
-    background-color: transparent;
-    color: {TEXT_DIM};
-}}
-QPushButton#toggle:checked {{
-    color: {ACCENT};
-    border-bottom: 2px solid {ACCENT};
-}}
-QTextEdit {{
-    background-color: white;
-    color: {TEXT_PRIMARY};
-    border: 1.5px solid {BORDER};
-    border-radius: 12px;
-    padding: 10px;
-    font-size: 13px;
-    font-family: 'Helvetica Neue', sans-serif;
-}}
-QLabel {{
-    color: {TEXT_DIM};
-    font-size: 12px;
-}}
-QLabel#heading {{
-    color: {TEXT_PRIMARY};
-    font-size: 15px;
-    font-weight: bold;
-}}
-QLabel#accent {{
-    color: {ACCENT};
-    font-size: 12px;
-    font-weight: bold;
-}}
-QDoubleSpinBox, QSpinBox {{
-    background-color: white;
-    color: {TEXT_PRIMARY};
-    border: 1.5px solid {BORDER};
-    border-radius: 10px;
-    padding: 4px 8px;
-    font-size: 13px;
-}}
-QDoubleSpinBox::up-button, QSpinBox::up-button,
-QDoubleSpinBox::down-button, QSpinBox::down-button {{
-    width: 0px;
-    height: 0px;
-    border: none;
-}}
-QCheckBox {{
-    color: {TEXT_PRIMARY};
-    font-size: 13px;
-    spacing: 8px;
-}}
-QCheckBox::indicator {{
-    width: 16px;
-    height: 16px;
-    border: 1.5px solid {ACCENT};
-    border-radius: 8px;
-    background-color: white;
-}}
-QCheckBox::indicator:checked {{
-    background-color: {ACCENT};
-}}
-QFrame#separator {{
-    background-color: {BORDER};
-    max-height: 1px;
-}}
-QScrollArea {{
-    border: none;
-    background-color: transparent;
-}}
-QLineEdit {{
-    background-color: white;
-    color: {TEXT_PRIMARY};
-    border: 1.5px solid {BORDER};
-    border-radius: 12px;
-    padding: 10px 14px;
-    font-size: 13px;
-    font-family: 'Helvetica Neue', sans-serif;
-}}
-QComboBox {{
-    background-color: white;
-    color: {TEXT_PRIMARY};
-    border: 1.5px solid {BORDER};
-    border-radius: 12px;
-    padding: 6px 12px;
-    font-size: 12px;
-}}
-QComboBox::drop-down {{
-    border: none;
-    padding-right: 8px;
-}}
-QComboBox QAbstractItemView {{
-    background-color: white;
-    color: {TEXT_PRIMARY};
-    border: 1.5px solid {BORDER};
-    selection-background-color: {PANEL_BG};
-    selection-color: {ACCENT};
-}}
-"""
+            log.debug("Version check failed: %s", e)
 
 
-# --- Worker thread for typing ---
+# Theme definitions and stylesheet builder live in utils/theme.py.
+from utils.theme import THEMES, build_style, DEFAULT_THEME
+
+# Persistent settings (theme choice, defaults) live in utils/settings.py.
+from utils.settings import load as settings_load, set as settings_set
+
+# Active theme color tokens - used in inline styles throughout the file
+_t = THEMES[DEFAULT_THEME]
+DARK_BG =      _t["DARK_BG"]
+PANEL_BG =     _t["PANEL_BG"]
+ACCENT =       _t["ACCENT"]
+ACCENT_DIM =   _t["ACCENT_DIM"]
+TEXT_PRIMARY = _t["TEXT_PRIMARY"]
+TEXT_DIM =     _t["TEXT_DIM"]
+DANGER =       _t["DANGER"]
+BORDER =       _t["BORDER"]
+INPUT_BG =     _t["INPUT_BG"]
+
+# --- Typing worker (PyQt bridge to TypingEngine) ---
+# TypingEngine in services/typing_engine.py holds all typing logic.
+# TypingWorker is a thin QThread wrapper whose only job is:
+#   1. Give the engine a thread to run in (QThread.run → engine.start_typing)
+#   2. Route engine callbacks to PyQt signals so the UI can connect to them
+#
+# One TypingWorker instance is created per typing session (same lifecycle as before).
 class TypingWorker(QThread):
     status_update = pyqtSignal(str)
-    finished = pyqtSignal()
-    countdown = pyqtSignal(int)
+    countdown     = pyqtSignal(int)
+    finished      = pyqtSignal()
 
-    def __init__(self, text, wpm, mistake_rate, max_speed, delay, stop_event, focus_monitor):
+    def __init__(
+        self,
+        text: str,
+        wpm: float,
+        mistake_rate: float,
+        max_speed: bool,
+        delay: int,
+    ) -> None:
         super().__init__()
-        self.text = text
-        self.wpm = wpm
-        self.mistake_rate = mistake_rate
-        self.max_speed = max_speed
-        self.delay = delay
-        self.stop_event = stop_event
-        self.focus_monitor = focus_monitor
+        self._text         = text
+        self._wpm          = wpm
+        self._mistake_rate = mistake_rate
+        self._max_speed    = max_speed
+        self._delay        = delay
 
-    def run(self):
-        try:
-            import pyautogui
-            pyautogui.FAILSAFE = False
-        except ImportError:
-            self.status_update.emit("Error: pyautogui not installed.")
-            self.finished.emit()
-            return
+        # Engine callbacks are wired directly to signal emission.
+        # Signals are emitted from the QThread, which is the correct
+        # way to do cross-thread communication in PyQt.
+        self._engine = TypingEngine(
+            on_status    = self.status_update.emit,
+            on_countdown = self.countdown.emit,
+            on_finished  = self.finished.emit,
+        )
 
-        # Countdown
-        for i in range(self.delay, 0, -1):
-            if self.stop_event.is_set():
-                self.status_update.emit("Cancelled.")
-                self.finished.emit()
-                return
-            self.countdown.emit(i)
-            time.sleep(1)
+    def run(self) -> None:
+        """QThread entry point — calls engine synchronously."""
+        self._engine.start_typing(
+            text         = self._text,
+            wpm          = self._wpm,
+            mistake_rate = self._mistake_rate,
+            max_speed    = self._max_speed,
+            delay        = self._delay,
+        )
 
-        self.status_update.emit("Typing...")
+    def stop(self) -> None:
+        """Request the engine to stop. Safe to call from the main thread."""
+        self._engine.stop_typing()
 
-        interval = 0.0 if self.max_speed else 60.0 / (self.wpm * CHARS_PER_WORD)
-        alphabet = "abcdefghijklmnopqrstuvwxyz"
-        buffer = []
-        i = 0
-        text_len = len(self.text)
+    @property
+    def lost_focus(self) -> bool:
+        return self._engine.lost_focus
 
-        while i < text_len:
-            if self.stop_event.is_set():
-                self.status_update.emit("Stopped.")
-                break
-            # Pause if focus lost
-            if self.focus_monitor and self.focus_monitor.lost_focus:
-                self.status_update.emit("Paused - switch back to target window...")
-                while self.focus_monitor.lost_focus and not self.stop_event.is_set():
-                    time.sleep(0.2)
-                if self.stop_event.is_set():
-                    break
-                self.status_update.emit("Resumed typing...")
-
-            character = self.text[i]
-            make_mistake = (
-                self.mistake_rate > 0
-                and character.isalpha()
-                and random.random() < self.mistake_rate
-            )
-            if make_mistake:
-                if buffer:
-                    pyautogui.write(''.join(buffer), interval=0)
-                    buffer = []
-                choices = [c for c in alphabet if c != character.lower()]
-                wrong_char = random.choice(choices)
-                if character.isupper():
-                    wrong_char = wrong_char.upper()
-                pyautogui.write(wrong_char, interval=0)
-                if interval > 0:
-                    time.sleep(interval)
-                pyautogui.press("backspace")
-                if interval > 0:
-                    time.sleep(interval)
-                pyautogui.write(character, interval=0)
-                if interval > 0:
-                    time.sleep(interval)
-            else:
-                buffer.append(character)
-            i += 1
-
-        if buffer and not self.stop_event.is_set():
-            pyautogui.write(''.join(buffer), interval=0)
-
-        if not self.stop_event.is_set():
-            self.status_update.emit("Done!")
-        self.finished.emit()
-
-
-# --- Focus monitor (detects window switch) ---
-class FocusMonitor:
-    def __init__(self):
-        self.lost_focus = False
+    @lost_focus.setter
+    def lost_focus(self, value: bool) -> None:
+        """Write True to pause mid-type; False to resume."""
+        self._engine.lost_focus = value
 
 
 # --- Auto Typer Panel ---
 class AutoTyperPanel(QWidget):
     def __init__(self, debug_window=None):
         super().__init__()
-        self.stop_event = threading.Event()
-        self.typing_worker = None
-        self.focus_monitor = FocusMonitor()
+        self.typing_worker = None   # set per session in start_typing()
         self.debug_window = debug_window
         self._build_ui()
 
@@ -351,7 +197,7 @@ class AutoTyperPanel(QWidget):
 
     def _log(self, msg: str):
         if self.debug_window and self.debug_window.isVisible():
-            self.debug_window.log(f"[AutoTyper] {msg}")
+            self.debug_window.log("AutoTyper", msg)
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
@@ -365,7 +211,7 @@ class AutoTyperPanel(QWidget):
 
         self.text_input = QTextEdit()
         self.text_input.setPlaceholderText("Paste your text here...")
-        self.text_input.setMinimumHeight(140)
+        self.text_input.setMinimumHeight(UIConfig.TEXT_INPUT_MIN_HEIGHT)
         layout.addWidget(self.text_input)
 
         # Settings row
@@ -378,8 +224,8 @@ class AutoTyperPanel(QWidget):
         wpm_col = QVBoxLayout()
         wpm_col.addWidget(QLabel("Speed (WPM)"))
         self.wpm_input = QDoubleSpinBox()
-        self.wpm_input.setRange(10, 50000)
-        self.wpm_input.setValue(1000)
+        self.wpm_input.setRange(TypingConfig.WPM_MIN, TypingConfig.WPM_MAX)
+        self.wpm_input.setValue(TypingConfig.DEFAULT_WPM)
         self.wpm_input.setDecimals(0)
         wpm_col.addWidget(self.wpm_input)
         settings_layout.addLayout(wpm_col)
@@ -388,9 +234,9 @@ class AutoTyperPanel(QWidget):
         mistake_col = QVBoxLayout()
         mistake_col.addWidget(QLabel("Mistake Rate (0-1)"))
         self.mistake_input = QDoubleSpinBox()
-        self.mistake_input.setRange(0.0, 1.0)
-        self.mistake_input.setValue(0.0)
-        self.mistake_input.setSingleStep(0.05)
+        self.mistake_input.setRange(TypingConfig.MISTAKE_RATE_MIN, TypingConfig.MISTAKE_RATE_MAX)
+        self.mistake_input.setValue(TypingConfig.DEFAULT_MISTAKE_RATE)
+        self.mistake_input.setSingleStep(TypingConfig.MISTAKE_STEP)
         self.mistake_input.setDecimals(2)
         mistake_col.addWidget(self.mistake_input)
         settings_layout.addLayout(mistake_col)
@@ -399,8 +245,8 @@ class AutoTyperPanel(QWidget):
         delay_col = QVBoxLayout()
         delay_col.addWidget(QLabel("Start Delay (sec)"))
         self.delay_input = QSpinBox()
-        self.delay_input.setRange(0, 60)
-        self.delay_input.setValue(10)
+        self.delay_input.setRange(TypingConfig.DELAY_MIN, TypingConfig.DELAY_MAX)
+        self.delay_input.setValue(TypingConfig.DEFAULT_DELAY)
         delay_col.addWidget(self.delay_input)
         settings_layout.addLayout(delay_col)
 
@@ -447,7 +293,6 @@ class AutoTyperPanel(QWidget):
             self._log(f"Dry run: {wc} words, {len(text)} chars.")
             return
 
-        self.stop_event.clear()
         self.start_btn.setEnabled(False)
         self.stop_btn.setEnabled(True)
 
@@ -456,13 +301,11 @@ class AutoTyperPanel(QWidget):
         self._log(f"Typing started. Delay: {delay}s, WPM: {self.wpm_input.value()}, Mistakes: {self.mistake_input.value()}, MaxSpeed: {self.max_speed_check.isChecked()}")
 
         self.typing_worker = TypingWorker(
-            text=text,
-            wpm=self.wpm_input.value(),
-            mistake_rate=self.mistake_input.value(),
-            max_speed=self.max_speed_check.isChecked(),
-            delay=delay,
-            stop_event=self.stop_event,
-            focus_monitor=self.focus_monitor,
+            text         = text,
+            wpm          = self.wpm_input.value(),
+            mistake_rate = self.mistake_input.value(),
+            max_speed    = self.max_speed_check.isChecked(),
+            delay        = delay,
         )
         self.typing_worker.status_update.connect(self.on_status)
         self.typing_worker.countdown.connect(self.on_countdown)
@@ -470,7 +313,8 @@ class AutoTyperPanel(QWidget):
         self.typing_worker.start()
 
     def stop_typing(self):
-        self.stop_event.set()
+        if self.typing_worker:
+            self.typing_worker.stop()
         self.status_label.setText("Stopping...")
         self._log("Typing stopped by user.")
 
@@ -495,34 +339,125 @@ class AutoTyperPanel(QWidget):
 class DebugWindow(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Debug Terminal")
-        self.setMinimumSize(600, 400)
-        self.setStyleSheet(f"""
-            QWidget {{ background-color: #1a1a1a; color: #00ff88; font-family: 'SF Mono', 'Menlo', monospace; font-size: 12px; }}
-            QTextEdit {{ background-color: #0f0f0f; color: #00ff88; border: 1px solid #2a2a2a; border-radius: 6px; padding: 10px; font-family: 'SF Mono', 'Menlo', monospace; }}
-            QPushButton {{ background-color: #1a1a1a; color: #00ff88; border: 1px solid #00ff88; border-radius: 6px; padding: 6px 14px; font-weight: bold; }}
-            QPushButton:hover {{ background-color: #00ff88; color: #0f0f0f; }}
+        self.setWindowTitle("Mintkey — Debug Terminal")
+        self.setMinimumSize(UIConfig.DEBUG_MIN_WIDTH, UIConfig.DEBUG_MIN_HEIGHT)
+        self.setStyleSheet("""
+            QWidget {
+                background-color: #1c1c1e;
+                color: #f8f8f2;
+                font-family: 'SF Mono', 'Menlo', 'Monaco', monospace;
+                font-size: 12px;
+            }
+            QTextEdit {
+                background-color: #1c1c1e;
+                color: #f8f8f2;
+                border: none;
+                padding: 12px;
+                font-family: 'SF Mono', 'Menlo', 'Monaco', monospace;
+                font-size: 12px;
+                selection-background-color: #44475a;
+            }
+            QPushButton {
+                background-color: #3a3a3c;
+                color: #f8f8f2;
+                border: none;
+                border-radius: 5px;
+                padding: 4px 12px;
+                font-size: 11px;
+            }
+            QPushButton:hover {
+                background-color: #48484a;
+            }
+            QLabel {
+                color: #8e8e93;
+                font-size: 11px;
+            }
         """)
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(14, 14, 14, 14)
-        layout.setSpacing(10)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
 
-        title = QLabel("DEBUG TERMINAL")
-        title.setStyleSheet("font-size: 13px; font-weight: bold; letter-spacing: 2px;")
-        layout.addWidget(title)
+        # Title bar mimicking macOS terminal
+        title_bar = QWidget()
+        title_bar.setFixedHeight(36)
+        title_bar.setStyleSheet("background-color: #2c2c2e; border-bottom: 1px solid #3a3a3c;")
+        title_layout = QHBoxLayout(title_bar)
+        title_layout.setContentsMargins(12, 0, 12, 0)
 
+        title_label = QLabel("mintkey — debug terminal")
+        title_label.setStyleSheet("color: #8e8e93; font-size: 12px;")
+        title_layout.addWidget(title_label)
+        title_layout.addStretch()
+
+        hint_label = QLabel('type "clear" to clear')
+        hint_label.setStyleSheet("color: #48484a; font-size: 11px;")
+        title_layout.addWidget(hint_label)
+
+        layout.addWidget(title_bar)
+
+        # Log display
         self.log_display = QTextEdit()
         self.log_display.setReadOnly(True)
         layout.addWidget(self.log_display)
 
-        clear_btn = QPushButton("Clear")
-        clear_btn.setFixedWidth(80)
-        clear_btn.clicked.connect(self.log_display.clear)
-        layout.addWidget(clear_btn, alignment=Qt.AlignmentFlag.AlignRight)
+        # Command input at the bottom
+        cmd_row = QHBoxLayout()
+        cmd_row.setContentsMargins(12, 6, 12, 6)
+        prompt = QLabel("$")
+        prompt.setStyleSheet("color: #50fa7b; font-family: 'SF Mono', 'Menlo', monospace; font-size: 12px;")
+        cmd_row.addWidget(prompt)
+        self.cmd_input = QLineEdit()
+        self.cmd_input.setStyleSheet("""
+            QLineEdit {
+                background-color: transparent;
+                color: #f8f8f2;
+                border: none;
+                font-family: 'SF Mono', 'Menlo', monospace;
+                font-size: 12px;
+            }
+        """)
+        self.cmd_input.setPlaceholderText('type "clear" to clear logs...')
+        self.cmd_input.returnPressed.connect(self._handle_command)
+        cmd_row.addWidget(self.cmd_input)
+        cmd_widget = QWidget()
+        cmd_widget.setStyleSheet("background-color: #2c2c2e; border-top: 1px solid #3a3a3c;")
+        cmd_widget.setLayout(cmd_row)
+        layout.addWidget(cmd_widget)
 
-    def log(self, message: str):
+        # Startup message
+        self.log("System", "Debug terminal ready.")
+
+    def _handle_command(self):
+        cmd = self.cmd_input.text().strip().lower()
+        self.cmd_input.clear()
+        if cmd == "clear":
+            self.log_display.clear()
+            self.log("System", "Cleared.")
+
+    def log(self, tag: str, message: str):
+        """
+        Log a message with color coding based on tag.
+        Tags: System, AI, AutoTyper, Error, Warning
+        """
         timestamp = time.strftime("%H:%M:%S")
-        self.log_display.append(f"[{timestamp}] {message}")
+
+        # Color per tag - matches Terminal Pro palette
+        colors = {
+            "System":    "#8be9fd",  # cyan
+            "AI":        "#50fa7b",  # green
+            "AutoTyper": "#ffb86c",  # orange
+            "Error":     "#ff5555",  # red
+            "Warning":   "#f1fa8c",  # yellow
+        }
+        tag_color = colors.get(tag, "#f8f8f2")
+        dim = "#6272a4"
+
+        html = (
+            f'<span style="color:{dim};">[{timestamp}]</span> '
+            f'<span style="color:{tag_color}; font-weight:bold;">[{tag}]</span> '
+            f'<span style="color:#f8f8f2;">{message}</span>'
+        )
+        self.log_display.append(html)
         self.log_display.verticalScrollBar().setValue(
             self.log_display.verticalScrollBar().maximum()
         )
@@ -532,11 +467,11 @@ class DebugWindow(QWidget):
 class AIChatPanel(QWidget):
     def __init__(self, debug_window=None):
         super().__init__()
-        self.api_key = os.environ.get("NIM_API_KEY", "")
-        self.conversation = [{"role": "system", "content": "You are a helpful assistant."}]
+        self.api_key = os.environ.get(APIConfig.KEY_ENV, "")
+        self.conversation = [{"role": "system", "content": APIConfig.SYSTEM_PROMPT}]
         self.last_response = None
         self.ai_worker = None
-        self.stop_event = threading.Event()
+        self.typing_worker = None   # set per session in _start_typing()
         self.debug_window = debug_window
         self._build_ui()
 
@@ -548,7 +483,7 @@ class AIChatPanel(QWidget):
 
     def _log(self, msg: str):
         if self.debug_window and self.debug_window.isVisible():
-            self.debug_window.log(f"[AI] {msg}")
+            self.debug_window.log("AI", msg)
 
     def _update_model_desc(self, index):
         self.model_desc.setText(NIM_MODELS[index][2])
@@ -557,7 +492,7 @@ class AIChatPanel(QWidget):
         if self.debug_window:
             self.debug_window.show()
             self.debug_window.raise_()
-            self.debug_window.log("[System] Debug terminal opened.")
+            self.debug_window.log("System", "Debug terminal opened.")
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
@@ -578,7 +513,7 @@ class AIChatPanel(QWidget):
         layout.addLayout(model_row)
 
         self.model_desc = QLabel(NIM_MODELS[0][2])
-        self.model_desc.setStyleSheet(f"color: {TEXT_DIM}; font-size: 11px; padding-left: 2px;")
+        self.model_desc.setObjectName("modelDesc")
         self.model_desc.setWordWrap(True)
         layout.addWidget(self.model_desc)
 
@@ -622,8 +557,8 @@ class AIChatPanel(QWidget):
         wpm_col.setSpacing(2)
         wpm_col.addWidget(QLabel("WPM"))
         self.wpm_input = QDoubleSpinBox()
-        self.wpm_input.setRange(10, 50000)
-        self.wpm_input.setValue(1000)
+        self.wpm_input.setRange(TypingConfig.WPM_MIN, TypingConfig.WPM_MAX)
+        self.wpm_input.setValue(TypingConfig.DEFAULT_WPM)
         self.wpm_input.setDecimals(0)
         self.wpm_input.setFixedWidth(90)
         wpm_col.addWidget(self.wpm_input)
@@ -633,9 +568,9 @@ class AIChatPanel(QWidget):
         mistake_col.setSpacing(2)
         mistake_col.addWidget(QLabel("Mistakes"))
         self.mistake_input = QDoubleSpinBox()
-        self.mistake_input.setRange(0.0, 1.0)
-        self.mistake_input.setValue(0.0)
-        self.mistake_input.setSingleStep(0.05)
+        self.mistake_input.setRange(TypingConfig.MISTAKE_RATE_MIN, TypingConfig.MISTAKE_RATE_MAX)
+        self.mistake_input.setValue(TypingConfig.DEFAULT_MISTAKE_RATE)
+        self.mistake_input.setSingleStep(TypingConfig.MISTAKE_STEP)
         self.mistake_input.setDecimals(2)
         self.mistake_input.setFixedWidth(80)
         mistake_col.addWidget(self.mistake_input)
@@ -645,8 +580,8 @@ class AIChatPanel(QWidget):
         delay_col.setSpacing(2)
         delay_col.addWidget(QLabel("Delay (s)"))
         self.delay_input = QSpinBox()
-        self.delay_input.setRange(0, 60)
-        self.delay_input.setValue(10)
+        self.delay_input.setRange(TypingConfig.DELAY_MIN, TypingConfig.DELAY_MAX)
+        self.delay_input.setValue(TypingConfig.DEFAULT_DELAY)
         self.delay_input.setFixedWidth(70)
         delay_col.addWidget(self.delay_input)
         settings_row.addLayout(delay_col)
@@ -697,7 +632,7 @@ class AIChatPanel(QWidget):
             self.debug_window = DebugWindow()
         self.debug_window.show()
         self.debug_window.raise_()
-        self.debug_window.log("Debug terminal opened.")
+        self.debug_window.log("System", "Debug terminal opened.")
 
     @pyqtSlot(str)
     def on_ai_response(self, reply):
@@ -738,7 +673,6 @@ class AIChatPanel(QWidget):
             self._start_typing()
 
     def _start_typing(self):
-        self.stop_event.clear()
         self.type_btn.setEnabled(False)
         self.stop_btn.setEnabled(True)
         delay = self.delay_input.value()
@@ -746,13 +680,11 @@ class AIChatPanel(QWidget):
         self._log(f"Typing started. Delay: {delay}s, WPM: {self.wpm_input.value()}, Mistakes: {self.mistake_input.value()}")
 
         self.typing_worker = TypingWorker(
-            text=self.last_response,
-            wpm=self.wpm_input.value(),
-            mistake_rate=self.mistake_input.value(),
-            max_speed=self.max_speed_check.isChecked(),
-            delay=delay,
-            stop_event=self.stop_event,
-            focus_monitor=None,
+            text         = self.last_response,
+            wpm          = self.wpm_input.value(),
+            mistake_rate = self.mistake_input.value(),
+            max_speed    = self.max_speed_check.isChecked(),
+            delay        = delay,
         )
         self.typing_worker.status_update.connect(self.on_type_status)
         self.typing_worker.countdown.connect(self.on_countdown)
@@ -776,7 +708,8 @@ class AIChatPanel(QWidget):
         self._log("Typing finished.")
 
     def stop_typing(self):
-        self.stop_event.set()
+        if self.typing_worker:
+            self.typing_worker.stop()
         self.status_label.setText("Stopping...")
         self._log("Typing stopped by user.")
 
@@ -802,12 +735,11 @@ class HelpPanel(QWidget):
 
         def section(title, body):
             t = QLabel(title)
-            t.setObjectName("heading")
-            t.setStyleSheet(f"color: {ACCENT}; font-size: 14px; font-weight: bold; margin-top: 6px;")
+            t.setObjectName("helpHeading")
             layout.addWidget(t)
             b = QLabel(body)
+            b.setObjectName("helpBody")
             b.setWordWrap(True)
-            b.setStyleSheet(f"color: {TEXT_PRIMARY}; font-size: 13px; line-height: 1.6;")
             layout.addWidget(b)
 
         section("Quick Start",
@@ -893,58 +825,16 @@ class HelpPanel(QWidget):
 # Keeps settings UI out of the main window to avoid clutter.
 # The debug terminal is accessible from here so it works from any tab.
 class SettingsWindow(QWidget):
-    # Signal emitted whenever any default value changes
-    defaults_changed = pyqtSignal(float, int, float)  # wpm, delay, mistake_rate
+    defaults_changed = pyqtSignal(float, int, float)
 
-    def __init__(self, debug_window=None, typer_panel=None, ai_panel=None):
+    def __init__(self, debug_window=None, typer_panel=None, ai_panel=None, main_window=None):
         super().__init__()
         self.debug_window = debug_window
         self.typer_panel = typer_panel
         self.ai_panel = ai_panel
+        self.main_window = main_window
         self.setWindowTitle("Mintkey Settings")
-        self.setMinimumWidth(420)
-        self.setStyleSheet(f"""
-            QWidget {{
-                background-color: {DARK_BG};
-                color: {TEXT_PRIMARY};
-                font-family: 'Helvetica Neue', sans-serif;
-            }}
-            QLabel#section {{
-                color: {ACCENT};
-                font-size: 13px;
-                font-weight: bold;
-                margin-top: 8px;
-            }}
-            QLabel {{
-                color: {TEXT_DIM};
-                font-size: 12px;
-            }}
-            QDoubleSpinBox, QSpinBox {{
-                background-color: white;
-                color: {TEXT_PRIMARY};
-                border: 1.5px solid {BORDER};
-                border-radius: 10px;
-                padding: 4px 8px;
-                font-size: 13px;
-            }}
-            QDoubleSpinBox::up-button, QSpinBox::up-button,
-            QDoubleSpinBox::down-button, QSpinBox::down-button {{
-                width: 0px; height: 0px; border: none;
-            }}
-            QPushButton {{
-                background-color: {PANEL_BG};
-                color: {ACCENT};
-                border: 1.5px solid {ACCENT};
-                border-radius: 20px;
-                padding: 8px 22px;
-                font-size: 13px;
-                font-weight: bold;
-            }}
-            QPushButton:hover {{
-                background-color: {ACCENT};
-                color: white;
-            }}
-        """)
+        self.setMinimumWidth(UIConfig.SETTINGS_MIN_WIDTH)
         self._build_ui()
 
     def _build_ui(self):
@@ -957,13 +847,30 @@ class SettingsWindow(QWidget):
         general_label.setObjectName("section")
         layout.addWidget(general_label)
 
+        # Theme selector
+        theme_row = QHBoxLayout()
+        theme_row.addWidget(QLabel("Theme"))
+        theme_row.addStretch()
+        self.theme_dropdown = QComboBox()
+        for name in THEMES:
+            self.theme_dropdown.addItem(name)
+        # Show the currently active theme
+        if self.main_window:
+            current = self.main_window.current_theme
+            idx = list(THEMES.keys()).index(current) if current in THEMES else 0
+            self.theme_dropdown.setCurrentIndex(idx)
+        self.theme_dropdown.setFixedWidth(150)
+        self.theme_dropdown.currentTextChanged.connect(self._on_theme_changed)
+        theme_row.addWidget(self.theme_dropdown)
+        layout.addLayout(theme_row)
+
         # Default WPM
         wpm_row = QHBoxLayout()
         wpm_row.addWidget(QLabel("Default Speed (WPM)"))
         wpm_row.addStretch()
         self.default_wpm = QDoubleSpinBox()
-        self.default_wpm.setRange(10, 50000)
-        self.default_wpm.setValue(1000)
+        self.default_wpm.setRange(TypingConfig.WPM_MIN, TypingConfig.WPM_MAX)
+        self.default_wpm.setValue(TypingConfig.DEFAULT_WPM)
         self.default_wpm.setDecimals(0)
         self.default_wpm.setFixedWidth(100)
         wpm_row.addWidget(self.default_wpm)
@@ -974,8 +881,8 @@ class SettingsWindow(QWidget):
         delay_row.addWidget(QLabel("Default Start Delay (seconds)"))
         delay_row.addStretch()
         self.default_delay = QSpinBox()
-        self.default_delay.setRange(0, 60)
-        self.default_delay.setValue(10)
+        self.default_delay.setRange(TypingConfig.DELAY_MIN, TypingConfig.DELAY_MAX)
+        self.default_delay.setValue(TypingConfig.DEFAULT_DELAY)
         self.default_delay.setFixedWidth(100)
         delay_row.addWidget(self.default_delay)
         layout.addLayout(delay_row)
@@ -985,9 +892,9 @@ class SettingsWindow(QWidget):
         mistake_row.addWidget(QLabel("Default Mistake Rate (0-1)"))
         mistake_row.addStretch()
         self.default_mistake = QDoubleSpinBox()
-        self.default_mistake.setRange(0.0, 1.0)
-        self.default_mistake.setValue(0.0)
-        self.default_mistake.setSingleStep(0.05)
+        self.default_mistake.setRange(TypingConfig.MISTAKE_RATE_MIN, TypingConfig.MISTAKE_RATE_MAX)
+        self.default_mistake.setValue(TypingConfig.DEFAULT_MISTAKE_RATE)
+        self.default_mistake.setSingleStep(TypingConfig.MISTAKE_STEP)
         self.default_mistake.setDecimals(2)
         self.default_mistake.setFixedWidth(100)
         mistake_row.addWidget(self.default_mistake)
@@ -996,7 +903,6 @@ class SettingsWindow(QWidget):
         # Divider
         sep = QFrame()
         sep.setObjectName("separator")
-        sep.setStyleSheet(f"background-color: {BORDER}; max-height: 1px;")
         layout.addWidget(sep)
 
         # --- Debug section ---
@@ -1018,11 +924,11 @@ class SettingsWindow(QWidget):
 
         # Version info
         sep2 = QFrame()
-        sep2.setStyleSheet(f"background-color: {BORDER}; max-height: 1px;")
+        sep2.setObjectName("separator")
         layout.addWidget(sep2)
 
         version_label = QLabel(f"Mintkey  ·  Version {CURRENT_VERSION}")
-        version_label.setStyleSheet(f"color: {TEXT_DIM}; font-size: 11px;")
+        version_label.setObjectName("versionLabel")
         layout.addWidget(version_label)
 
         layout.addStretch()
@@ -1032,11 +938,16 @@ class SettingsWindow(QWidget):
         self.default_delay.valueChanged.connect(self._push_defaults)
         self.default_mistake.valueChanged.connect(self._push_defaults)
 
+    def _on_theme_changed(self, theme_name: str):
+        if self.main_window:
+            self.main_window.apply_theme(theme_name)
+
     def _push_defaults(self):
         """Push current default values to both panels."""
         wpm = self.default_wpm.value()
         delay = self.default_delay.value()
         mistake = self.default_mistake.value()
+        log.debug("Default settings changed: wpm=%.0f, delay=%d, mistake=%.2f", wpm, delay, mistake)
         if self.typer_panel:
             self.typer_panel.apply_defaults(wpm, delay, mistake)
         if self.ai_panel:
@@ -1046,21 +957,67 @@ class SettingsWindow(QWidget):
         if self.debug_window:
             self.debug_window.show()
             self.debug_window.raise_()
-            self.debug_window.log("[System] Debug terminal opened from Settings.")
+        self.debug_window.log("System", "Debug terminal opened from Settings.")
 
 
 # --- Main Window ---
 class MainWindow(QMainWindow):
-    def __init__(self):
+    def __init__(self, app=None, saved_theme=None):
         super().__init__()
+        self.app = app
+        self.current_theme = saved_theme or DEFAULT_THEME
         self.setWindowTitle("Mintkey")
-        self.setMinimumSize(680, 620)
+        self.setMinimumSize(UIConfig.WINDOW_MIN_WIDTH, UIConfig.WINDOW_MIN_HEIGHT)
         self._build_ui()
         self._start_update_check()
+        # Apply saved theme colors to inline styles after build
+        if saved_theme and saved_theme != DEFAULT_THEME:
+            self.apply_theme(saved_theme)
+
+    def apply_theme(self, theme_name: str):
+        """Apply a theme across the whole app and save the preference."""
+        log.info("Theme changed to: %s", theme_name)
+        global DARK_BG, PANEL_BG, ACCENT, ACCENT_DIM, TEXT_PRIMARY, TEXT_DIM, DANGER, BORDER, INPUT_BG
+        t = THEMES.get(theme_name, THEMES[DEFAULT_THEME])
+        DARK_BG =      t["DARK_BG"]
+        PANEL_BG =     t["PANEL_BG"]
+        ACCENT =       t["ACCENT"]
+        ACCENT_DIM =   t["ACCENT_DIM"]
+        TEXT_PRIMARY = t["TEXT_PRIMARY"]
+        TEXT_DIM =     t["TEXT_DIM"]
+        DANGER =       t["DANGER"]
+        BORDER =       t["BORDER"]
+        INPUT_BG =     t["INPUT_BG"]
+
+        # Save preference so it persists across launches
+        settings_set("theme", theme_name)
+        self.current_theme = theme_name
+
+        # Apply global QSS
+        if self.app:
+            self.app.setStyleSheet(build_style(t))
+
+        # Refresh inline styles that reference color tokens directly
+        self.header.setStyleSheet(f"background-color: {PANEL_BG}; border-bottom: 1.5px solid {BORDER};")
+        self.title_label.setStyleSheet(f"color: {ACCENT}; font-size: 20px; font-weight: bold; letter-spacing: 3px;")
+        self.footer.setStyleSheet(f"background-color: {PANEL_BG};")
+        self.settings_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: transparent;
+                color: {ACCENT};
+                border: none;
+                border-radius: 18px;
+                font-size: 18px;
+                padding: 0px;
+            }}
+            QPushButton:hover {{
+                background-color: {PANEL_BG};
+            }}
+        """)
 
     def _start_update_check(self):
-        # Wait 2 seconds after launch before checking so the window is fully visible
-        QTimer.singleShot(2000, self._run_update_check)
+        # Wait after launch before checking so the window is fully visible
+        QTimer.singleShot(AppConfig.UPDATE_CHECK_DELAY_MS, self._run_update_check)
 
     def _run_update_check(self):
         self.update_checker = UpdateChecker()
@@ -1078,7 +1035,7 @@ class MainWindow(QMainWindow):
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if reply == QMessageBox.StandardButton.Yes:
-            webbrowser.open(DOWNLOAD_URL)
+            webbrowser.open(AppConfig.DOWNLOAD_URL)
             QApplication.quit()
 
     def _build_ui(self):
@@ -1089,16 +1046,15 @@ class MainWindow(QMainWindow):
         main_layout.setContentsMargins(0, 0, 0, 0)
 
         # Header
-        header = QWidget()
-        header.setStyleSheet(f"background-color: {PANEL_BG}; border-bottom: 1.5px solid {BORDER};")
-        header_layout = QVBoxLayout(header)
+        self.header = QWidget()
+        self.header.setStyleSheet(f"background-color: {PANEL_BG}; border-bottom: 1.5px solid {BORDER};")
+        header_layout = QVBoxLayout(self.header)
         header_layout.setContentsMargins(20, 16, 20, 0)
         header_layout.setSpacing(0)
 
-        title = QLabel("AUTO TYPER")
-        title.setStyleSheet(f"color: {ACCENT}; font-size: 20px; font-weight: bold; letter-spacing: 3px;")
-        title.setText("MINTKEY")
-        header_layout.addWidget(title)
+        self.title_label = QLabel("MINTKEY")
+        self.title_label.setStyleSheet(f"color: {ACCENT}; font-size: 20px; font-weight: bold; letter-spacing: 3px;")
+        header_layout.addWidget(self.title_label)
 
         # Toggle tabs
         tab_row = QHBoxLayout()
@@ -1133,23 +1089,22 @@ class MainWindow(QMainWindow):
         self.settings_btn.setToolTip("Settings")
         self.settings_btn.setStyleSheet(f"""
             QPushButton {{
-                background-color: {PANEL_BG};
+                background-color: transparent;
                 color: {ACCENT};
-                border: 1.5px solid {ACCENT};
+                border: none;
                 border-radius: 18px;
-                font-size: 16px;
+                font-size: 18px;
                 padding: 0px;
             }}
             QPushButton:hover {{
-                background-color: {ACCENT};
-                color: white;
+                background-color: {PANEL_BG};
             }}
         """)
         self.settings_btn.clicked.connect(self._open_settings)
         tab_row.addWidget(self.settings_btn)
 
         header_layout.addLayout(tab_row)
-        main_layout.addWidget(header)
+        main_layout.addWidget(self.header)
 
         # Panels
         self.stack = QStackedWidget()
@@ -1163,9 +1118,9 @@ class MainWindow(QMainWindow):
         main_layout.addWidget(self.stack)
 
         # Footer terminate button
-        footer = QWidget()
-        footer.setStyleSheet(f"background-color: {PANEL_BG};")
-        footer_layout = QHBoxLayout(footer)
+        self.footer = QWidget()
+        self.footer.setStyleSheet(f"background-color: {PANEL_BG};")
+        footer_layout = QHBoxLayout(self.footer)
         footer_layout.setContentsMargins(20, 10, 20, 10)
         footer_layout.addStretch()
 
@@ -1176,7 +1131,7 @@ class MainWindow(QMainWindow):
         terminate_btn.clicked.connect(self.terminate)
         footer_layout.addWidget(terminate_btn)
 
-        main_layout.addWidget(footer)
+        main_layout.addWidget(self.footer)
 
     def switch_tab(self, index):
         self.stack.setCurrentIndex(index)
@@ -1191,6 +1146,7 @@ class MainWindow(QMainWindow):
                 debug_window=self.debug_window,
                 typer_panel=self.typer_panel,
                 ai_panel=self.ai_panel,
+                main_window=self,
             )
         self._settings_window.show()
         self._settings_window.raise_()
@@ -1202,9 +1158,17 @@ class MainWindow(QMainWindow):
 
 def main():
     app = QApplication(sys.argv)
-    app.setStyleSheet(STYLE)
-    window = MainWindow()
+    log.info("=== Mintkey started ===")
+    log.info("Version: %d", CURRENT_VERSION)
+
+    saved = settings_load()
+    saved_theme = saved.get("theme", DEFAULT_THEME)
+    log.info("Loaded theme: %s", saved_theme)
+
+    app.setStyleSheet(build_style(THEMES.get(saved_theme, THEMES[DEFAULT_THEME])))
+    window = MainWindow(app=app, saved_theme=saved_theme)
     window.show()
+    log.info("Main window displayed")
     sys.exit(app.exec())
 
 
