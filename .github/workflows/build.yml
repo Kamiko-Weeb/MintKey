@@ -17,18 +17,24 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
-        run: |
-          pip install pyinstaller PyQt6 requests python-dotenv pyautogui
+        run: pip install pyinstaller PyQt6 requests python-dotenv pyautogui
 
       - name: Build Mac app
         run: |
-          pyinstaller --onefile --windowed --icon=mintkey.icns --name=Mintkey AutoTyper.py
+          pyinstaller --onefile --windowed --icon=mintkey.icns --name=Mintkey \
+            --add-data "version.txt:." \
+            AutoTyper.py
+
+      - name: Package as DMG
+        run: |
+          hdiutil create -volname "Mintkey" -srcfolder dist/Mintkey.app \
+            -ov -format UDZO Mintkey.dmg
 
       - name: Upload Mac artifact
         uses: actions/upload-artifact@v4
         with:
           name: Mintkey-Mac
-          path: dist/Mintkey.app
+          path: Mintkey.dmg
 
   build-windows:
     runs-on: windows-latest
@@ -41,15 +47,51 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
-        run: |
-          pip install pyinstaller PyQt6 requests python-dotenv pyautogui
+        run: pip install pyinstaller PyQt6 requests python-dotenv pyautogui
 
       - name: Build Windows exe
         run: |
-          pyinstaller --onefile --windowed --name=Mintkey AutoTyper.py
+          pyinstaller --onefile --windowed --name=Mintkey `
+            --add-data "version.txt;." `
+            AutoTyper.py
+
+      - name: Zip Windows exe
+        run: Compress-Archive -Path dist/Mintkey.exe -DestinationPath Mintkey-Windows.zip
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
         with:
           name: Mintkey-Windows
-          path: dist/Mintkey.exe
+          path: Mintkey-Windows.zip
+
+  release:
+    needs: [build-mac, build-windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read version
+        id: version
+        run: echo "version=$(cat version.txt)" >> $GITHUB_OUTPUT
+
+      - name: Download Mac artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: Mintkey-Mac
+
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: Mintkey-Windows
+
+      - name: Create or update release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: Mintkey v${{ steps.version.outputs.version }}
+          make_latest: true
+          files: |
+            Mintkey.dmg
+            Mintkey-Windows.zip
