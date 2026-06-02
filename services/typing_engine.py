@@ -182,8 +182,11 @@ class TypingEngine:
         )
 
         # ---- Typing loop ----
-        # Characters are typed one-at-a-time (no batching) so humanized
-        # timing can be applied to every individual keystroke.
+        # max_speed mode: buffer all normal characters and flush in one
+        # pyautogui call — same as the original behaviour, fastest possible.
+        # Timed mode: type one character at a time so _human_delay can vary
+        # the interval on every keystroke.
+        buffer: list[str] = []
         idx = 0
         text_len = len(text)
 
@@ -198,6 +201,9 @@ class TypingEngine:
             # instead of polling so it reacts instantly rather than after
             # FOCUS_POLL_INTERVAL seconds.
             if self.lost_focus:
+                if buffer:
+                    pyautogui.write("".join(buffer), interval=0)
+                    buffer = []
                 self._on_status("Paused - switch back to target window...")
                 while self.lost_focus and not self._stop_event.is_set():
                     time.sleep(TypingConfig.FOCUS_POLL_INTERVAL)
@@ -217,12 +223,15 @@ class TypingEngine:
             )
 
             if make_mistake:
+                # Flush buffer before the error sequence
+                if buffer:
+                    pyautogui.write("".join(buffer), interval=0)
+                    buffer = []
                 # Pick a wrong character that differs from the intended one
                 choices = [c for c in _ALPHABET if c != character.lower()]
                 wrong_char = random.choice(choices)
                 if character.isupper():
                     wrong_char = wrong_char.upper()
-
                 # Type wrong → humanized pause → backspace → humanized pause → correct
                 pyautogui.write(wrong_char, interval=0)
                 self._human_delay(interval, wrong_char)
@@ -231,11 +240,20 @@ class TypingEngine:
                 pyautogui.write(character, interval=0)
                 self._human_delay(interval, character)
 
+            elif max_speed:
+                # Batch normal characters — no per-character overhead
+                buffer.append(character)
+
             else:
+                # Timed mode: one character at a time with humanized delay
                 pyautogui.write(character, interval=0)
                 self._human_delay(interval, character)
 
             idx += 1
+
+        # Flush any remaining buffered characters (max_speed normal chars)
+        if buffer and not self._stop_event.is_set():
+            pyautogui.write("".join(buffer), interval=0)
 
         # ---- Finish ----
         if not self._stop_event.is_set():
