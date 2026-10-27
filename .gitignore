@@ -1,3 +1,6 @@
 .env
 IMPORTANT/
 IMPORTANT/
+
+# macOS folder metadata
+.DS_Store
